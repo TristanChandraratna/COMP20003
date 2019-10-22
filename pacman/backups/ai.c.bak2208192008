@@ -1,0 +1,287 @@
+#include <time.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <math.h>
+
+
+#include "ai.h"
+#include "utils.h"
+#include "priority_queue.h"
+
+
+struct heap h;
+
+float get_reward( node_t* n );
+
+/**
+ * Function called by pacman.c
+*/
+void initialize_ai(){
+	heap_init(&h);
+}
+
+/**
+ * function to copy a src into a dst state
+*/
+void copy_state(state_t* dst, state_t* src){
+	//Location of Ghosts and Pacman
+	memcpy( dst->Loc, src->Loc, 5*2*sizeof(int) );
+
+    //Direction of Ghosts and Pacman
+	memcpy( dst->Dir, src->Dir, 5*2*sizeof(int) );
+
+    //Default location in case Pacman/Ghosts die
+	memcpy( dst->StartingPoints, src->StartingPoints, 5*2*sizeof(int) );
+
+    //Check for invincibility
+    dst->Invincible = src->Invincible;
+    
+    //Number of pellets left in level
+    dst->Food = src->Food;
+    
+    //Main level array
+	memcpy( dst->Level, src->Level, 29*28*sizeof(int) );
+
+    //What level number are we on?
+    dst->LevelNumber = src->LevelNumber;
+    
+    //Keep track of how many points to give for eating ghosts
+    dst->GhostsInARow = src->GhostsInARow;
+
+    //How long left for invincibility
+    dst->tleft = src->tleft;
+
+    //Initial points
+    dst->Points = src->Points;
+
+    //Remiaining Lives
+    dst->Lives = src->Lives;   
+
+}
+
+node_t* create_init_node( state_t* init_state ){
+	node_t * new_n = (node_t *) malloc(sizeof(node_t));
+	new_n->parent = NULL;	
+	new_n->priority = 0;
+	new_n->depth = 0;
+	new_n->num_childs = 0;
+	copy_state(&(new_n->state), init_state);
+	new_n->acc_reward =  get_reward( new_n );
+	return new_n;
+}
+
+
+float heuristic( node_t* n ){
+    float h = 0;
+    
+    // h(n) = i('10 for fruit') 
+    //           - l('10 for life lost') 
+    //           - g('100 for final life lost')
+	//FILL IN MISSING CODE
+    
+    state_t s;
+    
+    
+    copy_state(&s, &n->state);
+    ///*
+    //find pacman's next space
+    
+    
+    int nextSpace = s.Level[s.Loc[4][0] + s.Dir[4][0]][s.Loc[4][1] + s.Dir[4][1]];
+    int pacmanNextLoc[] = {s.Loc[4][0] + s.Dir[4][0],s.Loc[4][1] + s.Dir[4][1]};
+    int blinkyNextLoc[] = {s.Loc[0][0] + s.Dir[0][0],s.Loc[0][1] + s.Dir[0][1]};
+    int pinkyNextLoc[] = {s.Loc[1][0] + s.Dir[1][0],s.Loc[1][1] + s.Dir[1][1]};
+    int inkyNextLoc[] = {s.Loc[2][0] + s.Dir[2][0],s.Loc[2][1] + s.Dir[2][1]};
+    int clydeNextLoc[] = {s.Loc[3][0] + s.Dir[3][0],s.Loc[3][1] + s.Dir[3][1]};
+    
+    int meetGhost = 0;
+    
+
+    if(nextSpace == 3){h += 10;} // When the next space is to eat a fruit
+    else if(nextSpace == 5 || 
+            (pacmanNextLoc[0] == blinkyNextLoc[0] 
+             && pacmanNextLoc[1] == blinkyNextLoc[1])){meetGhost=1;}
+    else if(nextSpace == 6 || 
+            (pacmanNextLoc[0] == blinkyNextLoc[0] 
+             && pacmanNextLoc[1] == blinkyNextLoc[1])){meetGhost=1;}
+    else if(nextSpace == 7 || 
+            (pacmanNextLoc[0] == blinkyNextLoc[0] 
+             && pacmanNextLoc[1] == blinkyNextLoc[1])){meetGhost=1;}
+    else if(nextSpace == 8 || 
+            (pacmanNextLoc[0] == blinkyNextLoc[0] 
+             && pacmanNextLoc[1] == blinkyNextLoc[1])){meetGhost=1;}
+
+    if(meetGhost){
+        if(s.Lives == 0){
+            h -= 100;
+        }
+        else{
+            h -= 10;
+        }
+    }
+	return h;
+}
+
+float get_reward( node_t* n ){
+	float reward = 0;
+	
+	//FILL IN MISSING CODE
+    //r(n) = (h(n) + score(n) − score(nP arent)) × γd
+    
+    reward += heuristic(n);
+    
+    reward += n->acc_reward;
+    
+    if(n->parent){
+        reward -= n->parent->acc_reward;
+    }
+    
+	float discount = pow(0.99,n->depth);
+   	if(reward > 1000){
+        printf("adsfkljasdlkadlka");
+    }
+	return discount * reward;
+}
+
+/**
+ * Apply an action to node n and return a new node resulting from executing the action
+*/
+bool applyAction(node_t* n, node_t** new_node, move_t action ){
+	bool changed_dir = false;
+
+    //FILL IN MISSING CODE
+    // n is parent, new_node is next node
+    (*new_node)->parent = n;
+    n->num_childs += 1;
+    (*new_node)->priority = n->priority - 1;
+    (*new_node)->depth = n->depth + 1;
+    
+    (*new_node)->acc_reward = get_reward(*new_node);
+    
+    changed_dir = execute_move_t( &((*new_node)->state), action );	
+
+    (*new_node)->move = action;
+    
+	return changed_dir;
+}
+
+
+/**
+ * Find best action by building all possible paths up to budget
+ * and back propagate using either max or avg
+ */
+
+move_t get_next_move( state_t init_state, int budget, propagation_t propagation, char* stats ){
+    FILE* fil = fopen("Debug.txt","w");
+    fil = fopen("Debug2.txt","w");
+    fil = fopen("HeapDisplay.txt","w");
+    fclose(fil);
+    
+	move_t best_action = rand() % 4;
+
+	float best_action_score[4];
+	for(unsigned i = 0; i < 4; i++)
+	    best_action_score[i] = 0;
+
+	unsigned generated_nodes = 0;
+	unsigned expanded_nodes = 0;
+	unsigned max_depth = 0;
+    
+	//Add the initial node
+	node_t* parent = create_init_node( &init_state ); 
+	
+	//Use the max heap API provided in priority_queue.h
+	heap_push(&h,parent);
+    
+	//FILL IN THE GRAPH ALGORITHM
+	best_action = GraphSearch(&h, parent, propagation, budget);
+
+	/*sprintf(stats, "Max Depth: %d Expanded nodes: %d  Generated nodes: %d\n",max_depth,expanded_nodes,generated_nodes);
+	
+	if(best_action == left)
+		sprintf(stats, "%sSelected action: Left\n",stats);
+	if(best_action == right)
+		sprintf(stats, "%sSelected action: Right\n",stats);
+	if(best_action == up)
+		sprintf(stats, "%sSelected action: Up\n",stats);
+	if(best_action == down)
+		sprintf(stats, "%sSelected action: Down\n",stats);
+
+	sprintf(stats, "%sScore Left %f Right %f Up %f Down %f",stats,best_action_score[left],best_action_score[right],best_action_score[up],best_action_score[down]);*/
+
+	return best_action;
+}
+
+move_t GraphSearch(struct heap *Graph, node_t* parent, propagation_t propagation, int budget){
+    
+    move_t best_action = 0;
+    
+    node_t *explored[budget];
+    int expCntr = 0;
+    struct heap frontier;
+    heap_init(&frontier);
+    heap_push(&frontier, parent);
+    
+    while(frontier.count != 0 && budget > Graph->count){
+        
+        node_t *currNode = heap_delete(&frontier);
+        if(!checkIfInUnsortedArr(explored, expCntr, currNode)){
+            for(int i = 0; i < 4; i++){
+                node_t *nextNode = create_init_node(&currNode->state);
+                if(applyAction(currNode, &nextNode, i)){
+                    //backPropagation(nextNode, propagation);
+                    if(nextNode->acc_reward < 0){
+                        free(nextNode);
+                    }
+                    else{
+                        heap_push(&frontier,nextNode);
+                        heap_push(Graph,nextNode);
+                    }
+                }
+            }
+            explored[expCntr++] = currNode;
+        }
+    }
+    
+    heap_display(Graph);
+    
+    node_t tmp = *heap_delete(Graph);
+    tmp = *heap_delete(Graph);
+    best_action = tmp.move;
+    
+    for(int i = 1; i < Graph->count; i){
+        emptyPQ(Graph);
+    }
+    return best_action;
+}
+
+void backPropagation(node_t *node, propagation_t propagation){
+    if(node->parent){
+        if(propagation){
+            int currScore = node->parent->acc_reward;
+            int numChildren = node->parent->num_childs;
+            currScore = currScore*(numChildren - 1);
+            currScore += node->acc_reward;
+            currScore = currScore/numChildren;
+
+            node->parent->acc_reward = currScore;
+        }
+        else{
+            if(node->parent->acc_reward < node->acc_reward){
+                //printf("%d\n",  get_reward(node));
+                node->parent->acc_reward = get_reward(node);
+            }
+        }
+        backPropagation(node->parent, propagation);
+    }
+}
+
+bool checkIfInUnsortedArr(node_t *arr[], int len, node_t *n){
+    for(int i = 0; i < len; i++){
+        if((arr[i]->state.Loc[4][0] == n->state.Loc[4][0]) 
+            && (arr[i]->state.Loc[4][1] == n->state.Loc[4][1])){
+            return true;
+        }
+    }
+    return false;
+}
